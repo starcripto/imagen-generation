@@ -1,615 +1,278 @@
-gradio>=3.50.2
-pillow>=10.0.0
-torch>=2.0.0
-transformers>=4.36.0
-diffusers>=0.24.0
-accelerate>=0.25.0
-safetensors>=0.4.0
-xformers>=0.0.22
-python-dotenv>=1.0.0
-requests>=2.31.0
-numpy>=1.24.0
-opencv-python>=4.8.0
-matplotlib>=3.7.0
-tqdm>=4.65.0
-huggingface_hub>=0.19.0
-pydantic>=2.4.0
-fastapi>=0.104.0
-uvicorn>=0.24.0
-python-multipart>=0.0.6
-import os
-import time
-import requests
-import io
-from PIL import Image
-from pathlib import Path
-import torch
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Imágenes de Alta Resolución</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding-top: 20px;
+            padding-bottom: 50px;
+        }
+        .prompt-container {
+            background-color: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="text-center mb-5">
+            <h1>🖼️ Generador de Imágenes de Alta Resolución con IA</h1>
+            <p class="lead">Crea imágenes impresionantes usando los modelos de IA más avanzados (APIs gratuitas)</p>
+        </header>
 
-class ModelManager:
-    """Clase para gestionar los diferentes modelos de generación de imágenes"""
-    
-    def __init__(self, save_dir="./output"):
-        self.save_dir = Path(save_dir)
-        self.save_dir.mkdir(exist_ok=True)
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self._sdxl_pipeline = None
-        self._sd_inpainting = None
-        self._sd_upscaler = None
-    
-    def _load_sdxl_pipeline(self):
-        """Carga el pipeline de Stable Diffusion XL bajo demanda"""
-        if self._sdxl_pipeline is None:
-            try:
-                from diffusers import StableDiffusionXLPipeline, DPMSolverMultistepScheduler
-                
-                print("Cargando modelo SDXL...")
-                model_id = "stabilityai/stable-diffusion-xl-base-1.0"
-                pipeline = StableDiffusionXLPipeline.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16,
-                    use_safetensors=True
-                )
-                pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
-                    pipeline.scheduler.config, 
-                    algorithm_type="sde-dpmsolver++", 
-                    use_karras_sigmas=True
-                )
-                pipeline = pipeline.to(self.device)
-                
-                # Optimizaciones
-                if self.device == "cuda":
-                    pipeline.enable_xformers_memory_efficient_attention()
-                
-                self._sdxl_pipeline = pipeline
-                print("Modelo SDXL cargado correctamente")
-            except Exception as e:
-                print(f"Error al cargar SDXL: {e}")
-                return None
-        
-        return self._sdxl_pipeline
-    
-    def _load_inpainting_model(self):
-        """Carga el modelo de inpainting bajo demanda"""
-        if self._sd_inpainting is None:
-            try:
-                from diffusers import StableDiffusionInpaintPipeline
-                
-                print("Cargando modelo de inpainting...")
-                model_id = "runwayml/stable-diffusion-inpainting"
-                pipeline = StableDiffusionInpaintPipeline.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16
-                ).to(self.device)
-                
-                if self.device == "cuda":
-                    pipeline.enable_xformers_memory_efficient_attention()
-                
-                self._sd_inpainting = pipeline
-                print("Modelo de inpainting cargado correctamente")
-            except Exception as e:
-                print(f"Error al cargar modelo de inpainting: {e}")
-                return None
-        
-        return self._sd_inpainting
-    
-    def _load_upscaler_model(self):
-        """Carga el modelo de upscaling bajo demanda"""
-        if self._sd_upscaler is None:
-            try:
-                from diffusers import StableDiffusionUpscalePipeline
-                
-                print("Cargando modelo de upscaling...")
-                model_id = "stabilityai/stable-diffusion-x4-upscaler"
-                pipeline = StableDiffusionUpscalePipeline.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16
-                ).to(self.device)
-                
-                self._sd_upscaler = pipeline
-                print("Modelo de upscaling cargado correctamente")
-            except Exception as e:
-                print(f"Error al cargar modelo de upscaling: {e}")
-                return None
-        
-        return self._sd_upscaler
-    
-    def generate_with_sdxl(self, prompt, negative_prompt="", steps=30, 
-                           guidance_scale=7.5, width=1024, height=1024, seed=-1):
-        """Genera una imagen con Stable Diffusion XL"""
-        try:
-            # Cargar pipeline
-            pipeline = self._load_sdxl_pipeline()
-            if pipeline is None:
-                return None, "Error al cargar el modelo SDXL"
+        <ul class="nav nav-tabs mb-4" id="myTab" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="generar-tab" data-bs-toggle="tab" data-bs-target="#generar" type="button" role="tab" aria-controls="generar" aria-selected="true">Generar</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="historial-tab" data-bs-toggle="tab" data-bs-target="#historial" type="button" role="tab" aria-controls="historial" aria-selected="false">Historial</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="ayuda-tab" data-bs-toggle="tab" data-bs-target="#ayuda" type="button" role="tab" aria-controls="ayuda" aria-selected="false">Ayuda</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            <div class="tab-pane fade show active" id="generar" role="tabpanel" aria-labelledby="generar-tab">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="prompt-container">
+                            <form action="/generar" method="post">
+                                <div class="mb-3">
+                                    <label for="prompt" class="form-label">Descripción de la imagen</label>
+                                    <textarea class="form-control" id="prompt" name="prompt" rows="4" placeholder="Escribe una descripción detallada de la imagen que deseas crear..." required></textarea>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="negativePrompt" class="form-label">Descripción negativa (lo que NO quieres en la imagen)</label>
+                                    <textarea class="form-control" id="negativePrompt" name="negativePrompt" rows="2" placeholder="Elementos que deseas evitar en la imagen..."></textarea>
+                                </div>
+                                
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <label for="modelo" class="form-label">Modelo de IA</label>
+                                        <select class="form-select" id="modelo" name="modelo">
+                                            <option value="StableDiffusion">Stable Diffusion XL</option>
+                                            <option value="Lexica">Lexica (Aperture)</option>
+                                            <option value="Craiyon">Craiyon (DALL-E Mini)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label for="semilla" class="form-label">Semilla (-1 para aleatoria)</label>
+                                        <input type="number" class="form-control" id="semilla" name="semilla" value="-1">
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <a class="btn btn-link p-0" data-bs-toggle="collapse" href="#ajustesAvanzados" role="button" aria-expanded="false" aria-controls="ajustesAvanzados">
+                                        Ajustes avanzados
+                                    </a>
+                                    <div class="collapse mt-2" id="ajustesAvanzados">
+                                        <div class="card card-body">
+                                            <div class="row mb-3">
+                                                <div class="col-md-6">
+                                                    <label for="pasos" class="form-label">Pasos de inferencia</label>
+                                                    <input type="range" class="form-range" id="pasos" name="pasos" min="20" max="100" value="30" oninput="document.getElementById('pasosValor').textContent = this.value">
+                                                    <div class="text-center"><span id="pasosValor">30</span></div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="guidance" class="form-label">Guidance Scale</label>
+                                                    <input type="range" class="form-range" id="guidance" name="guidance" min="1" max="20" step="0.1" value="7.5" oninput="document.getElementById('guidanceValor').textContent = this.value">
+                                                    <div class="text-center"><span id="guidanceValor">7.5</span></div>
+                                                </div>
+                                            </div>
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <label for="ancho" class="form-label">Ancho</label>
+                                                    <select class="form-select" id="ancho" name="ancho">
+                                                        <option value="512">512</option>
+                                                        <option value="768">768</option>
+                                                        <option value="1024" selected>1024</option>
+                                                        <option value="1280">1280</option>
+                                                        <option value="1536">1536</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <label for="alto" class="form-label">Alto</label>
+                                                    <select class="form-select" id="alto" name="alto">
+                                                        <option value="512">512</option>
+                                                        <option value="768">768</option>
+                                                        <option value="1024" selected>1024</option>
+                                                        <option value="1280">1280</option>
+                                                        <option value="1536">1536</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+                                    <button type="submit" class="btn btn-primary">Generar Imagen</button>
+                                    <button type="reset" class="btn btn-secondary">Limpiar</button>
+                                </div>
+                            </form>
+                            
+                            <div class="mt-4">
+                                <h5>Ejemplos</h5>
+                                <select class="form-select" id="ejemplos" onchange="cargarEjemplo()">
+                                    <option value="" selected>Seleccionar ejemplo...</option>
+                                    <option value="paisaje">Paisaje fantástico</option>
+                                    <option value="retrato">Retrato estilo anime</option>
+                                    <option value="comida">Comida fotorrealista</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">Imagen generada</div>
+                            <div class="card-body text-center">
+                                <div id="imagenGenerada" class="mb-3">
+                                    <img src="/images/placeholder.png" alt="Aquí aparecerá tu imagen generada" class="img-fluid">
+                                </div>
+                                <div id="resultadoTexto" class="text-muted">Genera una imagen para verla aquí</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
             
-            # Configurar generador para reproducibilidad
-            if seed == -1:
-                seed = int(time.time())
-            generator = torch.Generator(device=self.device).manual_seed(seed)
+            <div class="tab-pane fade" id="historial" role="tabpanel" aria-labelledby="historial-tab">
+                <h3 class="mb-4">Historial de imágenes generadas</h3>
+                <div id="galeriaHistorial" class="row">
+                    <!-- El historial se cargará aquí -->
+                    <div class="col-12 text-center">
+                        <p>Cargando historial...</p>
+                        <button class="btn btn-primary" onclick="cargarHistorial()">Actualizar historial</button>
+                    </div>
+                </div>
+            </div>
             
-            # Generar imagen
-            images = pipeline(
-                prompt=prompt,
-                negative_prompt=negative_prompt,
-                num_inference_steps=steps,
-                guidance_scale=guidance_scale,
-                width=width,
-                height=height,
-                generator=generator
-            ).images
+            <div class="tab-pane fade" id="ayuda" role="tabpanel" aria-labelledby="ayuda-tab">
+                <h3 class="mb-4">Consejos para mejores resultados</h3>
+                
+                <div class="card mb-4">
+                    <div class="card-header">Prompts efectivos</div>
+                    <div class="card-body">
+                        <ul>
+                            <li>Sé específico y detallado en tus descripciones</li>
+                            <li>Menciona estilos artísticos (ej: "estilo acuarela", "fotorrealista")</li>
+                            <li>Incluye información sobre iluminación y composición</li>
+                            <li>Añade términos como "alta calidad", "detallado", "fotorrealista" para mejores resultados</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="card mb-4">
+                    <div class="card-header">Ajustes recomendados</div>
+                    <div class="card-body">
+                        <ul>
+                            <li><strong>Pasos:</strong> 30-50 para equilibrio entre calidad y velocidad</li>
+                            <li><strong>Guidance Scale:</strong> 7-9 para adherencia al prompt, valores más altos para más fidelidad</li>
+                            <li><strong>Tamaño:</strong> 1024x1024 para la mayoría de casos, rectángulos para paisajes o retratos</li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">Modelos disponibles (APIs gratuitas)</div>
+                    <div class="card-body">
+                        <ul>
+                            <li><strong>Stable Diffusion XL:</strong> Versátil, con buenos resultados en casi todos los tipos de imágenes</li>
+                            <li><strong>Lexica (Aperture):</strong> Bueno para imágenes artísticas y conceptuales</li>
+                            <li><strong>Craiyon (DALL-E Mini):</strong> Resultados más básicos pero totalmente gratuito y sin límites</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function cargarEjemplo() {
+            const seleccion = document.getElementById('ejemplos').value;
             
-            # Guardar imagen
-            timestamp = int(time.time())
-            save_path = self.save_dir / f"sdxl_{timestamp}_{seed}.png"
-            images[0].save(save_path)
-            
-            return images[0], f"Imagen generada con SDXL (seed: {seed})"
-        except Exception as e:
-            return None, f"Error en la generación con SDXL: {str(e)}"
-    
-    def generate_with_dalle(self, prompt, size=(1024, 1024)):
-        """Genera una imagen con DALL-E 3 a través de la API de OpenAI"""
-        try:
-            api_key = os.getenv("OPENAI_API_KEY")
-            if not api_key:
-                return None, "Falta la clave API de OpenAI en el archivo .env"
-            
-            # Determinar tamaño para DALL-E
-            size_map = {
-                (1024, 1024): "1024x1024",
-                (1024, 1792): "1024x1792",
-                (1792, 1024): "1792x1024"
+            switch(seleccion) {
+                case 'paisaje':
+                    document.getElementById('prompt').value = "Un paisaje fantástico de montañas flotantes con cascadas, árboles bioluminiscentes, y castillos suspendidos en el aire, luz dorada del atardecer, nubes rosadas, estilo de película de fantasía de alta calidad";
+                    document.getElementById('negativePrompt').value = "personas, caras, dedos deformados, mal renderizado, mal dibujado, baja calidad, pixelado";
+                    document.getElementById('modelo').value = "StableDiffusion";
+                    document.getElementById('pasos').value = 40;
+                    document.getElementById('pasosValor').textContent = 40;
+                    document.getElementById('guidance').value = 7.5;
+                    document.getElementById('guidanceValor').textContent = 7.5;
+                    document.getElementById('ancho').value = 1024;
+                    document.getElementById('alto').value = 768;
+                    break;
+                case 'retrato':
+                    document.getElementById('prompt').value = "Retrato de estilo anime de un samurai joven con una armadura negra detallada, cabello largo oscuro, cicatriz en la mejilla, katana desenvainada, pose dramática, luces de neón azules y moradas, estilo de Studio Ghibli mezclado con cyberpunk";
+                    document.getElementById('negativePrompt').value = "deformidades, proporciones extrañas, baja calidad, pixelado, formas deformadas, trazos feos, bordes mal definidos";
+                    document.getElementById('modelo').value = "StableDiffusion";
+                    document.getElementById('pasos').value = 30;
+                    document.getElementById('pasosValor').textContent = 30;
+                    document.getElementById('guidance').value = 7.0;
+                    document.getElementById('guidanceValor').textContent = 7.0;
+                    document.getElementById('ancho').value = 768;
+                    document.getElementById('alto').value = 1024;
+                    break;
+                case 'comida':
+                    document.getElementById('prompt').value = "Fotografía profesional culinaria de un postre gourmet de chocolate, decoración elegante con frutas rojas y hojas de menta, iluminación suave, fondo bokeh, profundidad de campo, estilo revista de gastronomía de lujo";
+                    document.getElementById('negativePrompt').value = "deformidades, alimentos poco apetitosos, aspecto artificial, texturas irreales, manchas, suciedad";
+                    document.getElementById('modelo').value = "Lexica";
+                    document.getElementById('pasos').value = 30;
+                    document.getElementById('pasosValor').textContent = 30;
+                    document.getElementById('guidance').value = 7.0;
+                    document.getElementById('guidanceValor').textContent = 7.0;
+                    document.getElementById('ancho').value = 1024;
+                    document.getElementById('alto').value = 1024;
+                    break;
             }
-            size_str = size_map.get((size[0], size[1]), "1024x1024")
-            
-            # Llamada a la API
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
-            
-            payload = {
-                "model": "dall-e-3",
-                "prompt": prompt,
-                "size": size_str,
-                "quality": "hd",
-                "n": 1
-            }
-            
-            response = requests.post(
-                "https://api.openai.com/v1/images/generations",
-                headers=headers,
-                json=payload
-            )
-            
-            if response.status_code != 200:
-                return None, f"Error en la API de OpenAI: {response.text}"
-            
-            # Obtener URL de la imagen
-            image_url = response.json()["data"][0]["url"]
-            
-            # Descargar la imagen
-            image_response = requests.get(image_url)
-            image = Image.open(io.BytesIO(image_response.content))
-            
-            # Guardar imagen
-            timestamp = int(time.time())
-            save_path = self.save_dir / f"dalle_{timestamp}.png"
-            image.save(save_path)
-            
-            return image, "Imagen generada con DALL-E 3"
-        except Exception as e:
-            return None, f"Error con DALL-E: {str(e)}"
-
-    def generate_with_midjourney(self, prompt, width=1024, height=1024):
-        """
-        Genera una imagen con Midjourney a través de una API no oficial
-        Nota: Requiere configurar una API no oficial, ya que Midjourney no ofrece API oficial
-        """
-        try:
-            api_key = os.getenv("MIDJOURNEY_API_KEY")
-            if not api_key:
-                return None, "Falta la clave API de Midjourney en el archivo .env"
-            
-            # Este endpoint es hipotético, ya que Midjourney no tiene API oficial
-            # Deberías reemplazarlo con un servicio real que ofrezca acceso a Midjourney
-            url = "https://api.midjourney-proxy.example.com/generate"
-            
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}"
-            }
-            
-            payload = {
-                "prompt": prompt,
-                "width": width,
-                "height": height,
-                "quality": "high"
-            }
-            
-            response = requests.post(url, headers=headers, json=payload)
-            
-            if response.status_code != 200:
-                return None, f"Error en la API de Midjourney: {response.text}"
-            
-            # Obtener URL de la imagen (esto dependería de la API real que uses)
-            image_url = response.json().get("image_url")
-            
-            # Descargar la imagen
-            image_response = requests.get(image_url)
-            image = Image.open(io.BytesIO(image_response.content))
-            
-            # Guardar imagen
-            timestamp = int(time.time())
-            save_path = self.save_dir / f"midjourney_{timestamp}.png"
-            image.save(save_path)
-            
-            return image, "Imagen generada con Midjourney"
-        except Exception as e:
-            return None, f"Error con Midjourney API: {str(e)}"
-    
-    def upscale_image(self, image, prompt, factor=4):
-        """Mejora la resolución de una imagen utilizando el upscaler de SD"""
-        try:
-            pipeline = self._load_upscaler_model()
-            if pipeline is None:
-                return None, "Error al cargar el modelo de upscaling"
-            
-            # Redimensionar si es necesario (el modelo tiene límites de tamaño)
-            width, height = image.size
-            if width > 512 or height > 512:
-                # Escalar manteniendo aspecto para máximo 512px
-                ratio = min(512/width, 512/height)
-                new_width = int(width * ratio)
-                new_height = int(height * ratio)
-                image = image.resize((new_width, new_height), Image.LANCZOS)
-            
-            # Ejecutar upscaling
-            upscaled_image = pipeline(
-                prompt=prompt,
-                image=image,
-                noise_level=20,
-                num_inference_steps=30
-            ).images[0]
-            
-            # Guardar imagen
-            timestamp = int(time.time())
-            save_path = self.save_dir / f"upscaled_{timestamp}.png"
-            upscaled_image.save(save_path)
-            
-            return upscaled_image, "Imagen mejorada correctamente"
-        except Exception as e:
-            return None, f"Error en upscaling: {str(e)}"
-    
-    def inpaint_image(self, image, mask, prompt, negative_prompt="", steps=30, guidance_scale=7.5, seed=-1):
-        """Realiza inpainting en áreas enmascaradas de una imagen"""
-        try:
-            pipeline = self._load_inpainting_model()
-            if pipeline is None:
-                return None, "Error al cargar el modelo de inpainting"
-            
-            # Configurar generador
-            if seed == -1:
-                seed = int(time.time())
-            generator = torch.Generator(device=self.device).manual_seed(seed)
-            
-            # Asegurar que la imagen y máscara tienen el mismo tamaño
-            width, height = image.size
-            mask = mask.resize((width, height), Image.NEAREST)
-            
-            # Ejecutar inpainting
-            inpainted_image = pipeline(
-                prompt=prompt,
-                image=image,
-                mask_image=mask,
-                negative_prompt=negative_prompt,
-                num_inference_steps=steps,
-                guidance_scale=guidance_scale,
-                generator=generator
-            ).images[0]
-            
-            # Guardar imagen
-            timestamp = int(time.time())
-            save_path = self.save_dir / f"inpainted_{timestamp}_{seed}.png"
-            inpainted_image.save(save_path)
-            
-            return inpainted_image, f"Inpainting realizado correctamente (seed: {seed})"
-        except Exception as e:
-            return None, f"Error en inpainting: {str(e)}"
-import os
-import gradio as gr
-import torch
-from PIL import Image
-import numpy as np
-import time
-from dotenv import load_dotenv
-from pathlib import Path
-from models import ModelManager
-
-# Cargar variables de entorno
-load_dotenv()
-
-# Directorio para guardar imágenes
-SAVE_DIR = Path("./output")
-SAVE_DIR.mkdir(exist_ok=True)
-
-# Inicializar el administrador de modelos
-model_manager = ModelManager(save_dir=SAVE_DIR)
-
-# Verificar disponibilidad de GPU
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-print(f"Usando dispositivo: {DEVICE}")
-
-def generate_image(prompt, negative_prompt, model_choice, num_steps, guidance_scale, width, height, seed):
-    """Función principal que decide qué modelo usar para la generación"""
-    try:
-        if model_choice == "Stable Diffusion XL":
-            return model_manager.generate_with_sdxl(
-                prompt, negative_prompt, num_steps, guidance_scale, width, height, seed
-            )
-        elif model_choice == "DALL-E 3":
-            return model_manager.generate_with_dalle(prompt, (width, height))
-        elif model_choice == "Midjourney (API)":
-            return model_manager.generate_with_midjourney(prompt, width, height)
-        else:
-            return None, f"Modelo {model_choice} no implementado"
-    except Exception as e:
-        return None, f"Error general: {str(e)}"
-
-def upscale_image(image, prompt):
-    """Wrapper para la función de upscaling"""
-    if image is None:
-        return None, "Por favor, genera o sube una imagen primero"
-    return model_manager.upscale_image(image, prompt)
-
-def inpaint_image(image, mask, prompt, negative_prompt, steps, guidance_scale, seed):
-    """Wrapper para la función de inpainting"""
-    if image is None or mask is None:
-        return None, "Se requiere una imagen y una máscara para inpainting"
-    return model_manager.inpaint_image(image, mask, prompt, negative_prompt, steps, guidance_scale, seed)
-
-def load_example(example):
-    """Carga ejemplos predefinidos de prompt y ajustes"""
-    if example == "Paisaje fantástico":
-        return (
-            "Un paisaje fantástico de montañas flotantes con cascadas, árboles bioluminiscentes, y castillos suspendidos en el aire, luz dorada del atardecer, nubes rosadas, estilo de película de fantasía de alta calidad",
-            "personas, caras, dedos deformados, mal renderizado, mal dibujado, baja calidad, pixelado",
-            "Stable Diffusion XL",
-            40,
-            7.5,
-            1024,
-            768,
-            -1
-        )
-    elif example == "Retrato estilo anime":
-        return (
-            "Retrato de estilo anime de un samurai joven con una armadura negra detallada, cabello largo oscuro, cicatriz en la mejilla, katana desenvainada, pose dramática, luces de neón azules y moradas, estilo de Studio Ghibli mezclado con cyberpunk",
-            "deformidades, proporciones extrañas, baja calidad, pixelado, formas deformadas, trazos feos, bordes mal definidos",
-            "Stable Diffusion XL",
-            30,
-            7.0,
-            768,
-            1024,
-            -1
-        )
-    elif example == "Comida fotorrealista":
-        return (
-            "Fotografía profesional culinaria de un postre gourmet de chocolate, decoración elegante con frutas rojas y hojas de menta, iluminación suave, fondo bokeh, profundidad de campo, estilo revista de gastronomía de lujo",
-            "deformidades, alimentos poco apetitosos, aspecto artificial, texturas irreales, manchas, suciedad",
-            "DALL-E 3",
-            30,
-            7.0,
-            1024,
-            1024,
-            -1
-        )
-    return None
-
-# Crear la interfaz con Gradio
-def create_interface():
-    with gr.Blocks(title="Generador de Imágenes de Alta Resolución") as app:
-        gr.Markdown("""
-        # 🖼️ Generador de Imágenes de Alta Resolución con IA
+        }
         
-        Crea imágenes impresionantes usando los modelos de IA más avanzados.
-        """)
+        function cargarHistorial() {
+            fetch('/historial-json')
+                .then(response => response.json())
+                .then(data => {
+                    const galeria = document.getElementById('galeriaHistorial');
+                    galeria.innerHTML = '';
+                    
+                    if (data.imagenes && data.imagenes.length > 0) {
+                        data.imagenes.forEach(imagen => {
+                            galeria.innerHTML += `
+                                <div class="col-md-3 mb-4">
+                                    <div class="card">
+                                        <img src="data:image/png;base64,${imagen.base64}" class="card-img-top" alt="${imagen.nombre}">
+                                        <div class="card-body">
+                                            <p class="card-text text-truncate">${imagen.nombre}</p>
+                                            <a href="/download?path=${imagen.path}" class="btn btn-sm btn-primary">Descargar</a>
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        galeria.innerHTML = '<div class="col-12 text-center"><p>No hay imágenes en el historial</p></div>';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error al cargar el historial:', error);
+                    const galeria = document.getElementById('galeriaHistorial');
+                    galeria.innerHTML = '<div class="col-12 text-center"><p>Error al cargar el historial</p></div>';
+                });
+        }
         
-        with gr.Tab("Generar"):
-            with gr.Row():
-                with gr.Column():
-                    prompt = gr.Textbox(
-                        label="Descripción de la imagen",
-                        placeholder="Escribe una descripción detallada de la imagen que deseas crear...",
-                        lines=5
-                    )
-                    negative_prompt = gr.Textbox(
-                        label="Descripción negativa (lo que NO quieres en la imagen)",
-                        placeholder="Elementos que deseas evitar en la imagen...",
-                        lines=2
-                    )
-                    
-                    with gr.Row():
-                        model_choice = gr.Dropdown(
-                            choices=["Stable Diffusion XL", "DALL-E 3", "Midjourney (API)"],
-                            value="Stable Diffusion XL",
-                            label="Modelo de IA"
-                        )
-                        seed = gr.Number(
-                            value=-1,
-                            label="Semilla (-1 para aleatoria)",
-                            precision=0
-                        )
-                    
-                    with gr.Accordion("Ajustes avanzados", open=False):
-                        with gr.Row():
-                            num_steps = gr.Slider(
-                                minimum=20, maximum=100, value=30, step=1,
-                                label="Pasos de inferencia"
-                            )
-                            guidance_scale = gr.Slider(
-                                minimum=1.0, maximum=20.0, value=7.5, step=0.1,
-                                label="Guidance Scale"
-                            )
-                        
-                        with gr.Row():
-                            width = gr.Dropdown(
-                                choices=[512, 768, 1024, 1280, 1536, 1792],
-                                value=1024,
-                                label="Ancho"
-                            )
-                            height = gr.Dropdown(
-                                choices=[512, 768, 1024, 1280, 1536, 1792],
-                                value=1024,
-                                label="Alto"
-                            )
-                    
-                    with gr.Row():
-                        generate_btn = gr.Button("Generar Imagen", variant="primary")
-                        clear_btn = gr.Button("Limpiar", variant="secondary")
-                    
-                    # Ejemplos
-                    gr.Markdown("### Ejemplos")
-                    examples = gr.Dropdown(
-                        choices=["Paisaje fantástico", "Retrato estilo anime", "Comida fotorrealista"],
-                        label="Cargar ejemplo"
-                    )
-                
-                with gr.Column():
-                    result_image = gr.Image(label="Imagen generada", type="pil")
-                    result_text = gr.Textbox(label="Resultado")
-            
-            # Eventos
-            generate_btn.click(
-                fn=generate_image,
-                inputs=[prompt, negative_prompt, model_choice, num_steps, guidance_scale, width, height, seed],
-                outputs=[result_image, result_text]
-            )
-            
-            clear_btn.click(
-                fn=lambda: (None, None, "Stable Diffusion XL", 30, 7.5, 1024, 1024, -1),
-                inputs=[],
-                outputs=[result_image, result_text, model_choice, num_steps, guidance_scale, width, height, seed]
-            )
-            
-            examples.change(
-                fn=load_example,
-                inputs=[examples],
-                outputs=[prompt, negative_prompt, model_choice, num_steps, guidance_scale, width, height, seed]
-            )
-        
-        with gr.Tab("Edición"):
-            with gr.Row():
-                with gr.Column():
-                    edit_image = gr.Image(label="Imagen a editar", type="pil", tool="sketch")
-                    edit_prompt = gr.Textbox(
-                        label="Descripción para edición",
-                        placeholder="Describe lo que quieres modificar o mejorar...",
-                        lines=3
-                    )
-                    edit_negative = gr.Textbox(
-                        label="Descripción negativa",
-                        placeholder="Lo que quieres evitar en la edición...",
-                        lines=2
-                    )
-                    
-                    with gr.Tab("Upscaling"):
-                        upscale_btn = gr.Button("Mejorar Resolución", variant="primary")
-                    
-                    with gr.Tab("Inpainting"):
-                        with gr.Row():
-                            inpaint_steps = gr.Slider(
-                                minimum=20, maximum=50, value=25, step=1,
-                                label="Pasos"
-                            )
-                            inpaint_guidance = gr.Slider(
-                                minimum=1.0, maximum=15.0, value=7.5, step=0.1,
-                                label="Guidance Scale"
-                            )
-                            inpaint_seed = gr.Number(
-                                value=-1, 
-                                label="Semilla (-1 para aleatoria)",
-                                precision=0
-                            )
-                        inpaint_btn = gr.Button("Aplicar Inpainting", variant="primary")
-                
-                with gr.Column():
-                    edited_image = gr.Image(label="Imagen editada", type="pil")
-                    edit_result = gr.Textbox(label="Resultado de la edición")
-            
-            # Eventos de edición
-            upscale_btn.click(
-                fn=upscale_image,
-                inputs=[edit_image, edit_prompt],
-                outputs=[edited_image, edit_result]
-            )
-            
-            inpaint_btn.click(
-                fn=inpaint_image,
-                inputs=[edit_image, edit_image, edit_prompt, edit_negative, inpaint_steps, inpaint_guidance, inpaint_seed],
-                outputs=[edited_image, edit_result]
-            )
-        
-        with gr.Tab("Historial"):
-            gr.Markdown("## Historial de imágenes generadas")
-            gallery = gr.Gallery(
-                label="Imágenes generadas",
-                show_label=False,
-                elem_id="gallery",
-                columns=4,
-                rows=2,
-                object_fit="contain",
-                height="auto"
-            )
-            refresh_btn = gr.Button("Actualizar Historial")
-            
-            # Lógica para cargar imágenes del directorio
-            def load_images():
-                images = []
-                for ext in ["*.png", "*.jpg", "*.jpeg"]:
-                    images.extend(list(SAVE_DIR.glob(ext)))
-                
-                # Ordenar por fecha de modificación (más reciente primero)
-                images.sort(key=lambda x: os.path.getmtime(x), reverse=True)
-                
-                # Limitar a 20 imágenes más recientes
-                images = images[:20]
-                
-                return [str(img) for img in images]
-            
-            refresh_btn.click(
-                fn=load_images,
-                inputs=[],
-                outputs=[gallery]
-            )
-        
-        with gr.Tab("Ayuda"):
-            gr.Markdown("""
-            ## Consejos para mejores resultados
-            
-            ### Prompts efectivos
-            - Sé específico y detallado en tus descripciones
-            - Menciona estilos artísticos (ej: "estilo acuarela", "fotorrealista")
-            - Incluye información sobre iluminación y composición
-            - Añade términos como "alta calidad", "detallado", "fotorrealista" para mejores resultados
-            
-            ### Ajustes recomendados
-            - **Steps**: 30-50 para equilibrio entre calidad y velocidad
-            - **Guidance Scale**: 7-9 para adherencia al prompt, valores más altos para más fidelidad
-            - **Tamaño**: 1024x1024 para la mayoría de casos, rectángulos para paisajes o retratos
-            
-            ### Modelos
-            - **Stable Diffusion XL**: Versátil, rápido si tienes GPU local
-            - **DALL-E 3**: Excelente para seguir instrucciones complejas
-            - **Midjourney**: Generalmente produce imágenes más artísticas y estilizadas
-            
-            ### Edición
-            - En **Inpainting**: Dibuja sobre la imagen para marcar las áreas a modificar
-            - Para **Upscaling**: Funciona mejor con imágenes pequeñas o de baja resolución
-            """)
-    
-    return app
-
-# Iniciar la aplicación
-if __name__ == "__main__":
-    app = create_interface()
-    app.launch(share=False, server_name="0.0.0.0")
+        // Cargar el historial al cambiar a la pestaña correspondiente
+        document.getElementById('historial-tab').addEventListener('shown.bs.tab', function (e) {
+            cargarHistorial();
+        });
+    </script>
+</body>
+</html>
